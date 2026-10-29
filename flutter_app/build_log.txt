@@ -1,0 +1,85 @@
+
+Running Gradle task 'assembleDebug'...                          
+Warning: The plugin flutter_plugin_android_lifecycle requires Android SDK version 35 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin google_mlkit_commons requires Android SDK version 35 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin google_mlkit_pose_detection requires Android SDK version 35 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Your project is configured to compile against Android SDK 34, but the following plugin(s) require to be compiled against a higher Android SDK version:
+- flutter_plugin_android_lifecycle compiles against Android SDK 35
+- google_mlkit_commons compiles against Android SDK 35
+- google_mlkit_pose_detection compiles against Android SDK 35
+Fix this issue by compiling against the highest Android SDK version (they are backward compatible).
+Add the following to C:\Users\khyat\garba_project\flutter_app\android\app\build.gradle:
+
+    android {
+        compileSdk = 35
+        ...
+    }
+
+e: C:/Users/khyat/.gradle/caches/transforms-3/1883941d2759c467b016d46a917ad5be/transformed/jetified-kotlin-stdlib-1.9.24.jar!/META-INF/kotlin-stdlib-jdk7.kotlin_module: Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 1.9.0, expected version is 1.7.1.
+e: C:/Users/khyat/.gradle/caches/transforms-3/1883941d2759c467b016d46a917ad5be/transformed/jetified-kotlin-stdlib-1.9.24.jar!/META-INF/kotlin-stdlib-jdk8.kotlin_module: Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 1.9.0, expected version is 1.7.1.
+e: C:/Users/khyat/.gradle/caches/transforms-3/1883941d2759c467b016d46a917ad5be/transformed/jetified-kotlin-stdlib-1.9.24.jar!/META-INF/kotlin-stdlib.kotlin_module: Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 1.9.0, expected version is 1.7.1.
+e: C:/Users/khyat/.gradle/caches/transforms-3/c1bf03c31e3167f7272950769245b854/transformed/jetified-annotation-jvm-1.9.1.jar!/META-INF/annotation.kotlin_module: Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 1.9.0, expected version is 1.7.1.
+ERROR:C:\Users\khyat\.gradle\caches\transforms-3\eb027cf7fb4ebd29dd7b00512d1f206b\transformed\jetified-error_prone_annotations-2.36.0.jar: D8: java.lang.NullPointerException
+ERROR:C:\Users\khyat\.gradle\caches\transforms-3\a3dec4472059256c933611cf9ed01408\transformed\jetified-camera-video-1.4.1-runtime.jar: D8: java.lang.NullPointerException
+ERROR:C:\Users\khyat\.gradle\caches\transforms-3\8d9d12f0d15f7e2ea5eecc920b2ffe22\transformed\jetified-camera-camera2-1.4.1-runtime.jar: D8: java.lang.NullPointerException
+ERROR:C:\Users\khyat\.gradle\caches\transforms-3\a584d7e457f6978aeca4bafa5967ceeb\transformed\jetified-camera-core-1.4.1-runtime.jar: D8: java.lang.NullPointerException
+
+FAILURE: Build completed with 2 failures.
+
+1: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+==============================================================================
+
+2: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task ':app:mergeExtDexDebug'.
+> Could not resolve all files for configuration ':app:debugRuntimeClasspath'.
+   > Failed to transform camera-video-1.4.1.aar (androidx.camera:camera-video:1.4.1) to match attributes {artifactType=android-dex, asm-transformed-variant=NONE, dexing-enable-desugaring=true, dexing-enable-jacoco-instrumentation=false, dexing-is-debuggable=true, dexing-min-sdk=21, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Execution failed for DexingWithClasspathTransform: C:\Users\khyat\.gradle\caches\transforms-3\a3dec4472059256c933611cf9ed01408\transformed\jetified-camera-video-1.4.1-runtime.jar.
+         > Error while dexing.
+   > Failed to transform camera-camera2-1.4.1.aar (androidx.camera:camera-camera2:1.4.1) to match attributes {artifactType=android-dex, asm-transformed-variant=NONE, dexing-enable-desugaring=true, dexing-enable-jacoco-instrumentation=false, dexing-is-debuggable=true, dexing-min-sdk=21, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Execution failed for DexingWithClasspathTransform: C:\Users\khyat\.gradle\caches\transforms-3\8d9d12f0d15f7e2ea5eecc920b2ffe22\transformed\jetified-camera-camera2-1.4.1-runtime.jar.
+         > Error while dexing.
+   > Failed to transform camera-core-1.4.1.aar (androidx.camera:camera-core:1.4.1) to match attributes {artifactType=android-dex, asm-transformed-variant=NONE, dexing-enable-desugaring=true, dexing-enable-jacoco-instrumentation=false, dexing-is-debuggable=true, dexing-min-sdk=21, org.gradle.category=library, org.gradle.dependency.bundling=external, org.gradle.libraryelements=aar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Execution failed for DexingWithClasspathTransform: C:\Users\khyat\.gradle\caches\transforms-3\a584d7e457f6978aeca4bafa5967ceeb\transformed\jetified-camera-core-1.4.1-runtime.jar.
+         > Error while dexing.
+   > Failed to transform error_prone_annotations-2.36.0.jar (com.google.errorprone:error_prone_annotations:2.36.0) to match attributes {artifactType=android-dex, asm-transformed-variant=NONE, dexing-enable-desugaring=true, dexing-enable-jacoco-instrumentation=false, dexing-is-debuggable=true, dexing-min-sdk=21, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}.
+      > Execution failed for DexingWithClasspathTransform: C:\Users\khyat\.gradle\caches\transforms-3\eb027cf7fb4ebd29dd7b00512d1f206b\transformed\jetified-error_prone_annotations-2.36.0.jar.
+         > Error while dexing.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+==============================================================================
+
+* Get more help at https://help.gradle.org
+
+BUILD FAILED in 20s
+Running Gradle task 'assembleDebug'...                             20.7s
+
+┌─ Flutter Fix ────────────────────────────────────────────────────────────────────────────────┐
+│ [!] Your project requires a newer version of the Kotlin Gradle plugin.                       │
+│ Find the latest version on https://kotlinlang.org/docs/releases.html#release-details, then   │
+│ update the                                                                                   │
+│ version number of the plugin with id "org.jetbrains.kotlin.android" in the plugins block of  │
+│ C:\Users\khyat\garba_project\flutter_app\android\settings.gradle.                            │
+│                                                                                              │
+│ Alternatively (if your project was created before Flutter 3.19), update                      │
+│ C:\Users\khyat\garba_project\flutter_app\android\build.gradle                                │
+│ ext.kotlin_version = '<latest-version>'                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+Gradle task assembleDebug failed with exit code 1

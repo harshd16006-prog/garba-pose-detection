@@ -1,22 +1,36 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 
-void main() async {
+// ====== SETTINGS (yahan badlo) ======
+const String kServerUrl = 'http://10.21.100.105:8000/predict';
+const int kSendEveryMs = 400;
+const bool kFlipLikeTraining = true;
+// =======================================
+
+late List<CameraDescription> _cameras;
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final cameras = await availableCameras();
-  final firstCamera = cameras.first;
-  runApp(MyApp(camera: firstCamera));
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  _cameras = await availableCameras();
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  final CameraDescription camera;
-  const MyApp({required this.camera});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final camera = _cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.front,
+      orElse: () => _cameras.first,
+    );
     return MaterialApp(
       title: 'Garba Pose Detection',
       theme: ThemeData(primarySwatch: Colors.blue),
@@ -27,134 +41,217 @@ class MyApp extends StatelessWidget {
 
 class GarbaScreen extends StatefulWidget {
   final CameraDescription camera;
-  const GarbaScreen({required this.camera});
+  const GarbaScreen({super.key, required this.camera});
 
   @override
   State<GarbaScreen> createState() => _GarbaScreenState();
 }
 
 class _GarbaScreenState extends State<GarbaScreen> {
-  late CameraController _controller;
-  late PoseDetector _poseDetector;
-  String _predictedStep = 'Waiting...';
+  CameraController? _controller;
+  final PoseDetector _poseDetector = PoseDetector(
+    options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
+  );
+
+  String _predictedStep = 'WAITING...';
   int _score = 0;
   List<String> _feedback = [];
+  String _status = 'Camera start ho raha hai...';
   bool _isProcessing = false;
+  DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static const Map<DeviceOrientation, int> _orientations = {
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
 
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
-    _initializePoseDetector();
+    _initCamera();
   }
 
-  void _initializeCamera() async {
-    _controller = CameraController(
+  Future<void> _initCamera() async {
+    final controller = CameraController(
       widget.camera,
       ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup:
+          Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
     );
-
-    await _controller.initialize();
-    _startPoseDetection();
-    setState(() {});
+    try {
+      await controller.initialize();
+    } catch (e) {
+      if (mounted) setState(() => _status = 'Camera error: $e');
+      return;
+    }
+    if (!mounted) return;
+    _controller = controller;
+    await controller.startImageStream(_processImage);
+    setState(() => _status = 'Pose dikhao (poora body frame mein)');
   }
 
-  void _initializePoseDetector() {
-    _poseDetector = PoseDetector(
-      options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
-    );
+  InputImageRotation? _rotation() {
+    final controller = _controller;
+    if (controller == null) return null;
+    final sensorOrientation = widget.camera.sensorOrientation;
+    if (Platform.isIOS) {
+      return InputImageRotationValue.fromRawValue(sensorOrientation);
+    }
+    var comp = _orientations[controller.value.deviceOrientation];
+    if (comp == null) return null;
+    if (widget.camera.lensDirection == CameraLensDirection.front) {
+      comp = (sensorOrientation + comp) % 360;
+    } else {
+      comp = (sensorOrientation - comp + 360) % 360;
+    }
+    return InputImageRotationValue.fromRawValue(comp);
   }
 
-  void _startPoseDetection() async {
-    if (!_controller.value.isInitialized) return;
+  // Left <-> Right landmark ka jodi (training mein image mirror thi)
+  int _mirrorIndex(int i) {
+    if (i == 0) return 0;
+    if (i <= 3) return i + 3;
+    if (i <= 6) return i - 3;
+    return i.isOdd ? i + 1 : i - 1;
+  }
 
-    _controller.startImageStream((CameraImage image) async {
-      if (_isProcessing) return;
-      _isProcessing = true;
-
-      try {
-        final inputImage = InputImage.fromBytes(
-          bytes: image.planes[0].bytes,
-          metadata: InputImageMetadata(
-            size: Size(image.width.toDouble(), image.height.toDouble()),
-            rotation: InputImageRotation.rotation0deg,
-            format: InputImageFormat.nv21,
-            bytesPerRow: image.planes[0].bytesPerRow,
-          ),
-        );
-
-        final poses = await _poseDetector.processImage(inputImage);
-
-        if (poses.isNotEmpty) {
-          final pose = poses[0];
-          List<double> landmarks = [];
-
-          for (var landmark in pose.landmarks) {
-            landmarks.addAll([
-              landmark.position.dx,
-              landmark.position.dy,
-              landmark.z ?? 0,
-              landmark.inFrameLikelihood,
-            ]);
-          }
-
-          _sendToServer(landmarks);
-        }
-      } catch (e) {
-        print('Error: $e');
+  Future<void> _processImage(CameraImage image) async {
+    if (_isProcessing) return;
+    if (DateTime.now().difference(_lastSent).inMilliseconds < kSendEveryMs) {
+      return;
+    }
+    _isProcessing = true;
+    try {
+      final rotation = _rotation();
+      final format = InputImageFormatValue.fromRawValue(image.format.raw);
+      if (rotation == null || format == null || image.planes.length != 1) {
+        return;
       }
 
+      final inputImage = InputImage.fromBytes(
+        bytes: image.planes.first.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: format,
+          bytesPerRow: image.planes.first.bytesPerRow,
+        ),
+      );
+
+      final poses = await _poseDetector.processImage(inputImage);
+      if (poses.isEmpty) {
+        if (mounted) setState(() => _status = 'Pose nahi dikha. Thoda peeche jao');
+        return;
+      }
+
+      // Rotation ke baad image ki chaudai/lambai
+      final rotated = rotation == InputImageRotation.rotation90deg ||
+          rotation == InputImageRotation.rotation270deg;
+      final w = (rotated ? image.height : image.width).toDouble();
+      final h = (rotated ? image.width : image.height).toDouble();
+
+      final pose = poses.first;
+      final points = List<List<double>>.generate(33, (i) {
+        final lm = pose.landmarks[PoseLandmarkType.values[i]];
+        if (lm == null) return [0.0, 0.0, 0.0, 0.0];
+        return [lm.x / w, lm.y / h, lm.z / w, lm.likelihood];
+      });
+
+      final flat = <double>[];
+      for (var i = 0; i < 33; i++) {
+        final p = kFlipLikeTraining ? points[_mirrorIndex(i)] : points[i];
+        final x = kFlipLikeTraining ? 1.0 - p[0] : p[0];
+        flat.addAll([x, p[1], p[2], p[3]]);
+      }
+
+      _lastSent = DateTime.now();
+      await _sendToServer(flat);
+    } catch (e) {
+      debugPrint('Error: $e');
+    } finally {
       _isProcessing = false;
-    });
+    }
   }
 
-  void _sendToServer(List<double> landmarks) async {
+  Future<void> _sendToServer(List<double> landmarks) async {
     try {
-      final response = await http.post(
-        Uri.parse('http://10.21.100.105:8000/predict'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'landmarks': landmarks}),
-      ).timeout(Duration(seconds: 2));
+      final response = await http
+          .post(
+            Uri.parse(kServerUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'landmarks': landmarks}),
+          )
+          .timeout(const Duration(seconds: 3));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      if (!mounted) return;
+      if (response.statusCode != 200) {
+        setState(() => _status = 'Server error ${response.statusCode}');
+        return;
+      }
+      final data = jsonDecode(response.body);
+      if (data['success'] == true) {
         setState(() {
-          _predictedStep = data['step'] ?? 'Unknown';
-          _score = data['score'] ?? 0;
+          _predictedStep = (data['step'] ?? 'Unknown').toString().toUpperCase();
+          _score = (data['score'] as num?)?.round() ?? 0;
           _feedback = List<String>.from(data['feedback'] ?? []);
+          _status = '';
         });
+      } else {
+        setState(() => _status = 'Server: ${data['error']}');
       }
     } catch (e) {
-      print('Server error: $e');
+      if (mounted) {
+        setState(() => _status = 'Server nahi mil raha. IP aur WiFi check karo');
+      }
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     _poseDetector.close();
     super.dispose();
   }
 
+  Color _scoreColor() {
+    if (_score >= 80) return Colors.greenAccent;
+    if (_score >= 50) return Colors.amberAccent;
+    return Colors.redAccent;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!_controller.value.isInitialized) {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
       return Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(_status),
+            ],
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text('Garba Pose Detection')),
+      appBar: AppBar(title: const Text('Garba Pose Detection')),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          CameraPreview(_controller),
+          CameraPreview(controller),
           Positioned(
             bottom: 20,
             left: 20,
             right: 20,
             child: Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.black87,
                 borderRadius: BorderRadius.circular(10),
@@ -163,27 +260,30 @@ class _GarbaScreenState extends State<GarbaScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Step: ${_predictedStep}',
-                    style: TextStyle(
+                    'Step: $_predictedStep',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 10),
+                  const SizedBox(height: 10),
                   Text(
                     'Score: $_score/100',
                     style: TextStyle(
-                      color: Colors.greenAccent,
+                      color: _scoreColor(),
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 10),
-                  ..._feedback.map((f) => Text(
-                    f,
-                    style: TextStyle(color: Colors.orangeAccent),
-                  )),
+                  const SizedBox(height: 10),
+                  ..._feedback.map(
+                    (f) => Text(f, style: const TextStyle(color: Colors.orangeAccent)),
+                  ),
+                  if (_status.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(_status, style: const TextStyle(color: Colors.white70)),
+                  ],
                 ],
               ),
             ),

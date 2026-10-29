@@ -34,7 +34,7 @@ def predict(data: dict):
         pose = landmarks[:, :3].flatten()
         
         # Predict step
-        step = model.predict([pose])[0]
+        step = model.predict([landmarks.flatten()])[0]
         
         # Get score and feedback
         score, feedback = score_and_feedback(pose, reference_poses[step])
