@@ -8,10 +8,10 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:http/http.dart' as http;
 
 // ====== SETTINGS (yahan badlo) ======
-const String kServerUrl = 'http://10.21.100.105:8000/predict';
-const int kSendEveryMs = 400;
-const bool kFlipLikeTraining = true;
-// =======================================
+const String kServerUrl = 'http://10.21.100.105:8000/predict'; // apna laptop ka IPv4
+const int kSendEveryMs = 400; // itni der baad server ko bhejna
+const bool kFlipLikeTraining = true; // training mein webcam image mirror thi
+// ====================================
 
 late List<CameraDescription> _cameras;
 
@@ -58,6 +58,7 @@ class _GarbaScreenState extends State<GarbaScreen> {
   List<String> _feedback = [];
   String _status = 'Camera start ho raha hai...';
   bool _isProcessing = false;
+  int _frames = 0;
   DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
 
   static const Map<DeviceOrientation, int> _orientations = {
@@ -118,30 +119,69 @@ class _GarbaScreenState extends State<GarbaScreen> {
     return i.isOdd ? i + 1 : i - 1;
   }
 
+  // YUV420 (3 planes) -> NV21 (Y plane + interleaved V,U)
+  Uint8List _yuv420ToNv21(CameraImage image) {
+    final width = image.width;
+    final height = image.height;
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+    final out = Uint8List(width * height * 3 ~/ 2);
+    var idx = 0;
+    for (var row = 0; row < height; row++) {
+      final start = row * yPlane.bytesPerRow;
+      out.setRange(idx, idx + width, yPlane.bytes, start);
+      idx += width;
+    }
+    final uvRowStride = uPlane.bytesPerRow;
+    final uvPixelStride = uPlane.bytesPerPixel ?? 1;
+    final vRowStride = vPlane.bytesPerRow;
+    final vPixelStride = vPlane.bytesPerPixel ?? 1;
+    for (var row = 0; row < height ~/ 2; row++) {
+      for (var col = 0; col < width ~/ 2; col++) {
+        out[idx++] = vPlane.bytes[row * vRowStride + col * vPixelStride];
+        out[idx++] = uPlane.bytes[row * uvRowStride + col * uvPixelStride];
+      }
+    }
+    return out;
+  }
+
   Future<void> _processImage(CameraImage image) async {
     if (_isProcessing) return;
     if (DateTime.now().difference(_lastSent).inMilliseconds < kSendEveryMs) {
       return;
     }
     _isProcessing = true;
+    _frames++;
+    if (mounted) setState(() => _status = 'frames=$_frames (frame aa rahe hain)');
     try {
       final rotation = _rotation();
-      final format = InputImageFormatValue.fromRawValue(image.format.raw);
-      if (rotation == null || format == null || image.planes.length != 1) {
+      if (rotation == null || image.planes.isEmpty) {
+        if (mounted) {
+          setState(() => _status =
+              'DEBUG: rot=$rotation planes=${image.planes.length}');
+        }
         return;
       }
 
+      // Camera 3 planes (YUV420) deta hai to NV21 mein badlo
+      final Uint8List bytes = image.planes.length == 1
+          ? image.planes.first.bytes
+          : _yuv420ToNv21(image);
+
       final inputImage = InputImage.fromBytes(
-        bytes: image.planes.first.bytes,
+        bytes: bytes,
         metadata: InputImageMetadata(
           size: Size(image.width.toDouble(), image.height.toDouble()),
           rotation: rotation,
-          format: format,
-          bytesPerRow: image.planes.first.bytesPerRow,
+          format: InputImageFormat.nv21,
+          bytesPerRow: image.width,
         ),
       );
 
-      final poses = await _poseDetector.processImage(inputImage);
+      final poses = await _poseDetector
+          .processImage(inputImage)
+          .timeout(const Duration(seconds: 4));
       if (poses.isEmpty) {
         if (mounted) setState(() => _status = 'Pose nahi dikha. Thoda peeche jao');
         return;
@@ -171,6 +211,7 @@ class _GarbaScreenState extends State<GarbaScreen> {
       await _sendToServer(flat);
     } catch (e) {
       debugPrint('Error: $e');
+      if (mounted) setState(() => _status = 'DEBUG error: $e');
     } finally {
       _isProcessing = false;
     }
@@ -241,7 +282,7 @@ class _GarbaScreenState extends State<GarbaScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Garba Pose Detection')),
+      appBar: AppBar(title: const Text('Garba Pose Detection v4')),
       body: Stack(
         fit: StackFit.expand,
         children: [
