@@ -8,7 +8,7 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:http/http.dart' as http;
 
 // ====== SETTINGS (yahan badlo) ======
-const String kServerUrl = 'http://10.21.100.105:8000/predict'; // apna laptop ka IPv4
+const String kServerUrl = 'https://garba-pose-detection.onrender.com/predict'; // apna laptop ka IPv4
 const int kSendEveryMs = 400; // itni der baad server ko bhejna
 const bool kFlipLikeTraining = true; // training mein webcam image mirror thi
 // ====================================
